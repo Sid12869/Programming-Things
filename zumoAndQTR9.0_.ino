@@ -1,11 +1,16 @@
-#include <ZumoBuzzer.h>
 #include <ZumoMotors.h>
-#include <Pushbutton.h>
 #include <QTRSensors.h>
 #include <ZumoReflectanceSensorArray.h>
+#include <NewPing.h>
+
+
  
 #define LED 13
- 
+
+
+#define TRIGGER_PIN  2  // Arduino pin tied to trigger pin on the ultrasonic sensor.
+#define ECHO_PIN     6  // Arduino pin tied to echo pin on the ultrasonic sensor.
+#define MAX_DISTANCE 200 // Maximum distance we want to ping for (in centimeters). Maximum sensor distance is rated at 400-500cm.
 // this might need to be tuned for different lighting conditions, surfaces, etc.
 #define QTR_THRESHOLD  400 // microseconds
   
@@ -13,18 +18,21 @@
 #define REVERSE_SPEED     100 // 0 is stopped, 400 is full speed
 #define TURN_SPEED        100
 #define FORWARD_SPEED     200
-#define REVERSE_DURATION  200 // ms
 #define TURN_DURATION     300 // ms
 
 ZumoMotors motors;
+ZumoReflectanceSensorArray sensors(QTR_NO_EMITTER_PIN);
+NewPing sonar(TRIGGER_PIN, ECHO_PIN, MAX_DISTANCE);
  
 #define NUM_SENSORS 6
 unsigned int sensor_values[NUM_SENSORS];
 bool forwardBehaviour = true;
-bool stopMotor = false; 
+int roomCount = 0;
+const int NUMBEROFROOMS = 5;
+String directions[NUMBEROFROOMS];
+bool track = false;
+bool search = false;
 
- 
-ZumoReflectanceSensorArray sensors(QTR_NO_EMITTER_PIN);
 
 bool lightSensorCheck(int c)
 {
@@ -112,6 +120,32 @@ bool edgeSensorCheck()
      return check;
    }
 }
+
+void sonarSearch()
+{
+  if(sonar.ping_cm() < 5 and !sonar.ping_cm() > 200) 
+  {
+    if(search == true)
+    {
+      Serial.print("Object found in room ");
+      Serial.println(roomCount);
+      search == false;
+    }
+    else
+    {
+      if(roomCount == 0 )
+      {
+        Serial.println("Object in corrider outside the first room");
+      }
+      else
+      {
+        Serial.print("Object found outside room ");
+        Serial.println(roomCount);
+      }
+      
+    }
+  }
+}
  
 void setup()
 { 
@@ -151,15 +185,32 @@ void movement(char keypress)
                 }
                break;
       case 'D':right();
+               if(track == true)
+               {
+                  roomCount++;
+                  directions[roomCount] = "turned right into room " +  roomCount;
+                  Serial.println(" you have turned right into room ");
+                  Serial.println(roomCount);
+                  track = false;
+               }
                break;
       case 'A':left();
+               if(track == true)
+               {
+                  roomCount++;
+                  directions[roomCount] = "turned left into room " + roomCount;
+                  Serial.print(" you have turned left into room ");
+                  Serial.println(roomCount);
+                  track = false;
+               }
                break;
       case 'S':backward();
                break;
-      case ' ': stopMotor = true;
-                break;
-      case 'C': 
-               if(forwardBehaviour == false)
+      case 'R':track = true;
+               search = true;
+               break;
+      
+      case 'C':if(forwardBehaviour == false)
                {
                  forwardBehaviour = true;
                  Serial.println("the ristrictions have been removed");
@@ -181,7 +232,8 @@ void intermitantforward(){
      if (lightSensorCheck(c) == true)
      {
         motors.setLeftSpeed(speed), motors.setRightSpeed(speed);
-        delay(30);
+        sonarSearch();
+        delay(20);
      }
    }
     motors.setLeftSpeed(0), motors.setRightSpeed(0);
@@ -190,11 +242,12 @@ void intermitantforward(){
 
 void constantForward()
 {
-  while(forwardSensorCheck() == true && stopMotor == false)
+  char keypress;
+  while(forwardSensorCheck() == true)
   {
     motors.setLeftSpeed(100), motors.setRightSpeed(100);
   }
-  if(stopMotor == false)
+  if(forwardSensorCheck() == false) 
   {
    forwardBehaviour = false;
    Serial.println("You have reached the end of a corridor");
@@ -204,11 +257,12 @@ void constantForward()
 
 
 void right(){
-  for (int speed = 0; speed <= 150; speed++)
+  for (int speed = 0; speed <= 125; speed++)
   {
     if (edgeSensorCheck() == true)
     {
       motors.setLeftSpeed(speed), motors.setRightSpeed(-speed);
+      sonarSearch();
       delay(10);
     }
   }
@@ -217,11 +271,12 @@ void right(){
 }
 
 void left(){
-  for (int speed = 0; speed <= 150; speed++)
+  for (int speed = 0; speed <= 125; speed++)
   {
     if (edgeSensorCheck() == true)
     {
       motors.setLeftSpeed(-speed), motors.setRightSpeed(speed);
+      sonarSearch();
       delay(10);
     }
   }
@@ -232,7 +287,7 @@ void backward(){
   for (int speed = 0; speed >= -100; speed--)
   {
     motors.setLeftSpeed(speed), motors.setRightSpeed(speed);
-    delay(30);
+    delay(20);
   }
 
   motors.setLeftSpeed(0),motors.setRightSpeed(0);
